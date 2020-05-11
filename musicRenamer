@@ -1,0 +1,80 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use utf8;
+#use charnames          qw( :full );  # For \N{}
+#use Unicode::Normalize qw( NFKC );
+use File::Glob qw(bsd_glob);
+use Encode qw(encode decode_utf8);
+
+my $DEBUG=1;
+my $TEST=1;
+my $folder;
+if ($ARGV[0]){$folder=$ARGV[0]}else{die "No folder contains"};
+
+foreach my $d (grep { -d } glob "$folder/*"){
+  foreach my $f (bsd_glob "$d/*"){
+    $f=decode_utf8($f, 1) or die "Can't decode $f\n";
+    renamer($f);
+  }
+}
+
+sub renamer{
+  my ($path)=@_;
+  $path =~ s/\/\//\//g;
+  if ($path=~m/.*\/(.*)\/(.*)\.(mp3|flac|wav)/g){
+    my ($artist,$title,$type) = ($1,$2,$3);
+    my $ntitle = getName($title);
+
+    #atributes
+    my ($old_artist,$old_title) = getInfo_v2("$path");
+    if ($old_artist ne $artist || $old_title ne $title){
+      print "Attribute will be changed: $path  $old_artist->$artist  $old_title->$ntitle\n" if $DEBUG;
+      `id3tool --set-title=\"$ntitle\" --set-artist=\"$artist\" \"$path\"` if !$TEST;
+    }
+
+    #rename
+    if ($path ne "$folder$artist/$ntitle.$type"){
+      print "File name will be changed: $path->$folder$artist/$ntitle.$type\n" if $DEBUG;
+      rename $path,"$folder$artist/$ntitle.$type" if !$TEST;
+    }
+  }
+}
+###
+#Get filename
+#Return composistion name
+sub getName{
+  my $s = shift;
+  if ($s=~/.*\s?[–-]\s?([\S\s\d]+)/ ||
+      $s=~/([\d\S\s]+)/
+  ){return noSpace($1);}
+  die "Can't get filename for $s\n";
+}
+
+sub getInfo{
+  my $path = shift;
+  my $out = `id3tool "$path"`;
+  my $artist = ($out =~ /Artist:\s*([\s\S].+)/m) ? $1: "";
+  my $title = ($out =~ /Song Title:\s*([\s\S].+)/m) ? $1: "";
+  $artist =~ s/^\s+|\s+$//g;
+  $title =~ s/^\s+|\s+$//g;
+  return ($artist, $title);
+}
+
+sub getInfo_v2{
+  my $path = shift;
+  my $out = `id3v2 -l "$path"| grep Title`;
+  my $artist = ($out =~ /Artist:\s*([\s\S].+)/m) ? $1: "";
+  my $title = ($out =~ /TIT2 \(Title\/songname\/content description\):\s*([\s\S].+)/m)? $1: "";
+#  my $title = ($out =~ /Title\s*:\s*([\s\S].+)\s+Artist/m)? $1: "";
+  $artist =~ s/^\s+|\s+$//g;
+  $title =~ s/^\s+|\s+$//g;
+  return ($artist, $title);
+}
+
+sub noSpace{
+  my $string = shift;
+  $string=~ s/_/ /g;
+  $string =~ s/^\s+|\s+$|¿|`|'//g;
+  return $string;
+}
